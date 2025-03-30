@@ -6,18 +6,23 @@ import sympy
 
 
 class DiffieHellman:
-    def __init__(self, key_size=1024):
+    def __init__(self, key_size=1024, p=None, g=None):
         """
         Инициализация алгоритма Диффи-Хеллмана.
         
         :param key_size: Размер ключа в битах
+        :param p: Простое число p (если None, будет сгенерировано)
+        :param g: Основание g (если None, будет использовано значение 2)
         """
-        # Генерация большого простого числа p
-        self.p = sympy.randprime(2**(key_size-1), 2**key_size)
-        # Выбор основания g (часто используется 2 или 5)
-        self.g = 2
+        # Используем переданное значение p или генерируем новое
+        self.p = p if p is not None else sympy.randprime(2**(key_size-1), 2**key_size)
+        
+        # Используем переданное значение g или значение 2
+        self.g = g if g is not None else 2
+        
         # Сгенерируем случайное целое число в качестве секретного ключа
         self._private_key = random.randint(2, self.p - 2)
+        
         # Вычисление открытого ключа
         self._public_key = pow(self.g, self._private_key, self.p)
     
