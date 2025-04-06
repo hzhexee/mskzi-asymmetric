@@ -1,0 +1,3 @@
+sympy
+cryptography
+pyqt6
