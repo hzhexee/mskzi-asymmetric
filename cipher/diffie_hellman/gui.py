@@ -1,121 +1,314 @@
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-from diffie_hellman import DiffieHellman
+"""
+Графический интерфейс пользователя для алгоритма обмена ключами Диффи-Хеллмана.
+Реализация на PyQt6 с темной темой.
+"""
 import os
+import sys
 import base64
+import hashlib
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+    QLabel, QTabWidget, QTextEdit, QPushButton, QFileDialog, 
+    QMessageBox, QComboBox, QSplitter, QGroupBox, QMenuBar, QMenu
+)
+from PyQt6.QtGui import QFont, QPalette, QAction
+from PyQt6.QtCore import Qt
+from diffie_hellman import DiffieHellman
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.backends import default_backend
-import hashlib
 
-class DiffieHellmanApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Диффи-Хеллман шифрование")
-        self.root.geometry("800x600")
+class DiffieHellmanApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
         
         # Инициализация алгоритма Диффи-Хеллмана
         self.alice = None
         self.bob = None
         self.shared_secret = None
         
-        # Создаем интерфейс
-        self.create_widgets()
+        self.setWindowTitle("Диффи-Хеллман шифрование")
+        self.setGeometry(100, 100, 900, 700)
         
+        # Применяем темную тему
+        self.apply_dark_theme()
+        
+        # Создание интерфейса
+        self.create_menu()
+        self.create_widgets()
+    
+    def apply_dark_theme(self):
+        """Применение темной темы оформления"""
+        self.setStyleSheet("""
+            QMainWindow, QWidget {
+                background-color: #2D2D30;
+                color: #E0E0E0;
+            }
+            QTabWidget::pane {
+                border: 1px solid #3F3F46;
+                background-color: #252526;
+            }
+            QTabBar::tab {
+                background-color: #2D2D30;
+                color: #E0E0E0;
+                border: 1px solid #3F3F46;
+                padding: 8px 15px;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }
+            QTabBar::tab:selected {
+                background-color: #252526;
+                border-bottom-color: #252526;
+            }
+            QTextEdit {
+                background-color: #1E1E1E;
+                color: #E0E0E0;
+                border: 1px solid #3F3F46;
+                border-radius: 4px;
+                font-family: Consolas, monospace;
+                font-size: 10pt;
+            }
+            QPushButton {
+                background-color: #0E639C;
+                color: white;
+                border-radius: 4px;
+                padding: 6px 15px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1177BB;
+            }
+            QPushButton:pressed {
+                background-color: #0D5989;
+            }
+            QGroupBox {
+                border: 1px solid #3F3F46;
+                border-radius: 4px;
+                margin-top: 0.5em;
+                font-weight: bold;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0 5px;
+            }
+            QMenu {
+                background-color: #2D2D30;
+                color: #E0E0E0;
+                border: 1px solid #3F3F46;
+            }
+            QMenu::item:selected {
+                background-color: #3E3E42;
+            }
+            QMenuBar {
+                background-color: #2D2D30;
+                color: #E0E0E0;
+            }
+            QMenuBar::item:selected {
+                background-color: #3E3E42;
+            }
+            QComboBox {
+                background-color: #1E1E1E;
+                color: #E0E0E0;
+                border: 1px solid #3F3F46;
+                border-radius: 4px;
+                padding: 4px;
+            }
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #1E1E1E;
+                color: #E0E0E0;
+                border: 1px solid #3F3F46;
+            }
+        """)
+    
+    def create_menu(self):
+        """Создание верхнего меню приложения"""
+        menubar = self.menuBar()
+        
+        # Меню "Файл"
+        file_menu = menubar.addMenu("Файл")
+        
+        exit_action = QAction("Выход", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
+        # Меню "Ключи"
+        keys_menu = menubar.addMenu("Ключи")
+        
+        gen_keys_action = QAction("Сгенерировать новые ключи", self)
+        gen_keys_action.triggered.connect(self.generate_keys)
+        keys_menu.addAction(gen_keys_action)
+    
     def create_widgets(self):
-        notebook = ttk.Notebook(self.root)
-        notebook.pack(fill='both', expand=True, padx=10, pady=10)
+        """Создание основных элементов интерфейса"""
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
+        
+        # Создание вкладок
+        tab_widget = QTabWidget()
         
         # Вкладка генерации ключей
-        key_frame = ttk.Frame(notebook)
-        notebook.add(key_frame, text="Генерация ключей")
+        key_tab = QWidget()
+        self.setup_key_tab(key_tab)
+        tab_widget.addTab(key_tab, "Генерация ключей")
         
         # Вкладка шифрования
-        encrypt_frame = ttk.Frame(notebook)
-        notebook.add(encrypt_frame, text="Шифрование")
+        encrypt_tab = QWidget()
+        self.setup_encrypt_tab(encrypt_tab)
+        tab_widget.addTab(encrypt_tab, "Шифрование")
         
         # Вкладка расшифрования
-        decrypt_frame = ttk.Frame(notebook)
-        notebook.add(decrypt_frame, text="Расшифрование")
+        decrypt_tab = QWidget()
+        self.setup_decrypt_tab(decrypt_tab)
+        tab_widget.addTab(decrypt_tab, "Расшифрование")
         
-        # Настройка вкладки генерации ключей
-        self.setup_key_frame(key_frame)
+        main_layout.addWidget(tab_widget)
+    
+    def setup_key_tab(self, tab):
+        """Настройка вкладки генерации ключей"""
+        layout = QVBoxLayout(tab)
         
-        # Настройка вкладки шифрования
-        self.setup_encrypt_frame(encrypt_frame)
+        # Фрейм для параметров ключей
+        params_group = QGroupBox("Параметры ключа")
+        params_layout = QVBoxLayout(params_group)
         
-        # Настройка вкладки расшифрования
-        self.setup_decrypt_frame(decrypt_frame)
+        key_size_layout = QHBoxLayout()
+        key_size_layout.addWidget(QLabel("Размер ключа (в битах):"))
+        self.key_size_combo = QComboBox()
+        self.key_size_combo.addItems(["512", "1024", "2048", "4096"])
+        self.key_size_combo.setCurrentIndex(1)  # По умолчанию 1024 бит
+        key_size_layout.addWidget(self.key_size_combo)
+        key_size_layout.addStretch()
         
-    def setup_key_frame(self, parent):
-        frame = ttk.LabelFrame(parent, text="Параметры ключа")
-        frame.pack(fill='both', expand=True, padx=10, pady=10)
+        params_layout.addLayout(key_size_layout)
         
-        ttk.Label(frame, text="Размер ключа (в битах):").grid(row=0, column=0, padx=5, pady=5, sticky='w')
-        self.key_size = ttk.Combobox(frame, values=["512", "1024", "2048", "4096"])
-        self.key_size.current(1)  # По умолчанию 1024 бит
-        self.key_size.grid(row=0, column=1, padx=5, pady=5, sticky='w')
+        generate_btn = QPushButton("Сгенерировать ключи")
+        generate_btn.clicked.connect(self.generate_keys)
+        params_layout.addWidget(generate_btn)
         
-        ttk.Button(frame, text="Сгенерировать ключи", command=self.generate_keys).grid(row=1, column=0, columnspan=2, padx=5, pady=10)
+        layout.addWidget(params_group)
         
-        info_frame = ttk.LabelFrame(parent, text="Информация о ключах")
-        info_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        # Фрейм для информации о ключах
+        info_group = QGroupBox("Информация о ключах")
+        info_layout = QVBoxLayout(info_group)
         
-        self.key_info_text = tk.Text(info_frame, wrap=tk.WORD, height=15)
-        self.key_info_text.pack(fill='both', expand=True, padx=5, pady=5)
-        self.key_info_text.config(state=tk.DISABLED)
+        self.key_info_text = QTextEdit()
+        self.key_info_text.setReadOnly(True)
+        info_layout.addWidget(self.key_info_text)
         
-    def setup_encrypt_frame(self, parent):
-        input_frame = ttk.LabelFrame(parent, text="Исходный текст")
-        input_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        layout.addWidget(info_group)
+    
+    def setup_encrypt_tab(self, tab):
+        """Настройка вкладки шифрования"""
+        layout = QVBoxLayout(tab)
         
-        self.encrypt_input = tk.Text(input_frame, wrap=tk.WORD, height=8)
-        self.encrypt_input.pack(fill='both', expand=True, padx=5, pady=5)
+        # Разделитель, который позволяет регулировать размер панелей
+        splitter = QSplitter(Qt.Orientation.Vertical)
         
-        button_frame = ttk.Frame(input_frame)
-        button_frame.pack(fill='x', padx=5, pady=5)
+        # Верхняя панель - исходный текст
+        input_group = QGroupBox("Исходный текст")
+        input_layout = QVBoxLayout(input_group)
         
-        ttk.Button(button_frame, text="Загрузить из файла", command=lambda: self.load_file(self.encrypt_input)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Зашифровать", command=self.encrypt_data).pack(side=tk.RIGHT, padx=5)
+        self.encrypt_input = QTextEdit()
+        input_layout.addWidget(self.encrypt_input)
         
-        output_frame = ttk.LabelFrame(parent, text="Зашифрованный текст")
-        output_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        # Кнопки для верхней панели
+        input_buttons = QHBoxLayout()
+        load_btn = QPushButton("Загрузить из файла")
+        load_btn.clicked.connect(lambda: self.load_file(self.encrypt_input))
+        encrypt_btn = QPushButton("Шифровать")
+        encrypt_btn.clicked.connect(self.encrypt_data)
         
-        self.encrypt_output = tk.Text(output_frame, wrap=tk.WORD, height=8)
-        self.encrypt_output.pack(fill='both', expand=True, padx=5, pady=5)
+        input_buttons.addWidget(load_btn)
+        input_buttons.addWidget(encrypt_btn)
+        input_buttons.addStretch()
         
-        save_button_frame = ttk.Frame(output_frame)
-        save_button_frame.pack(fill='x', padx=5, pady=5)
+        input_layout.addLayout(input_buttons)
         
-        ttk.Button(save_button_frame, text="Сохранить в файл", command=lambda: self.save_file(self.encrypt_output.get('1.0', tk.END))).pack(side=tk.RIGHT, padx=5)
+        # Нижняя панель - зашифрованный текст
+        output_group = QGroupBox("Зашифрованный текст")
+        output_layout = QVBoxLayout(output_group)
         
-    def setup_decrypt_frame(self, parent):
-        input_frame = ttk.LabelFrame(parent, text="Зашифрованный текст")
-        input_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        self.encrypt_output = QTextEdit()
+        self.encrypt_output.setReadOnly(True)
+        output_layout.addWidget(self.encrypt_output)
         
-        self.decrypt_input = tk.Text(input_frame, wrap=tk.WORD, height=8)
-        self.decrypt_input.pack(fill='both', expand=True, padx=5, pady=5)
+        # Кнопки для нижней панели
+        output_buttons = QHBoxLayout()
+        output_buttons.addStretch()
+        save_btn = QPushButton("Сохранить в файл")
+        save_btn.clicked.connect(lambda: self.save_file(self.encrypt_output.toPlainText()))
+        output_buttons.addWidget(save_btn)
         
-        button_frame = ttk.Frame(input_frame)
-        button_frame.pack(fill='x', padx=5, pady=5)
+        output_layout.addLayout(output_buttons)
         
-        ttk.Button(button_frame, text="Загрузить из файла", command=lambda: self.load_file(self.decrypt_input)).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Расшифровать", command=self.decrypt_data).pack(side=tk.RIGHT, padx=5)
+        # Добавляем панели в разделитель
+        splitter.addWidget(input_group)
+        splitter.addWidget(output_group)
         
-        output_frame = ttk.LabelFrame(parent, text="Расшифрованный текст")
-        output_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        # Добавляем разделитель в основной макет
+        layout.addWidget(splitter)
+    
+    def setup_decrypt_tab(self, tab):
+        """Настройка вкладки расшифрования"""
+        layout = QVBoxLayout(tab)
         
-        self.decrypt_output = tk.Text(output_frame, wrap=tk.WORD, height=8)
-        self.decrypt_output.pack(fill='both', expand=True, padx=5, pady=5)
+        # Разделитель, который позволяет регулировать размер панелей
+        splitter = QSplitter(Qt.Orientation.Vertical)
         
-        save_button_frame = ttk.Frame(output_frame)
-        save_button_frame.pack(fill='x', padx=5, pady=5)
+        # Верхняя панель - зашифрованный текст
+        input_group = QGroupBox("Зашифрованный текст")
+        input_layout = QVBoxLayout(input_group)
         
-        ttk.Button(save_button_frame, text="Сохранить в файл", command=lambda: self.save_file(self.decrypt_output.get('1.0', tk.END))).pack(side=tk.RIGHT, padx=5)
+        self.decrypt_input = QTextEdit()
+        input_layout.addWidget(self.decrypt_input)
         
+        # Кнопки для верхней панели
+        input_buttons = QHBoxLayout()
+        load_btn = QPushButton("Загрузить из файла")
+        load_btn.clicked.connect(lambda: self.load_file(self.decrypt_input))
+        decrypt_btn = QPushButton("Расшифровать")
+        decrypt_btn.clicked.connect(self.decrypt_data)
+        
+        input_buttons.addWidget(load_btn)
+        input_buttons.addWidget(decrypt_btn)
+        input_buttons.addStretch()
+        
+        input_layout.addLayout(input_buttons)
+        
+        # Нижняя панель - расшифрованный текст
+        output_group = QGroupBox("Расшифрованный текст")
+        output_layout = QVBoxLayout(output_group)
+        
+        self.decrypt_output = QTextEdit()
+        self.decrypt_output.setReadOnly(True)
+        output_layout.addWidget(self.decrypt_output)
+        
+        # Кнопки для нижней панели
+        output_buttons = QHBoxLayout()
+        output_buttons.addStretch()
+        save_btn = QPushButton("Сохранить в файл")
+        save_btn.clicked.connect(lambda: self.save_file(self.decrypt_output.toPlainText()))
+        output_buttons.addWidget(save_btn)
+        
+        output_layout.addLayout(output_buttons)
+        
+        # Добавляем панели в разделитель
+        splitter.addWidget(input_group)
+        splitter.addWidget(output_group)
+        
+        # Добавляем разделитель в основной макет
+        layout.addWidget(splitter)
+    
     def generate_keys(self):
+        """Генерация ключей Диффи-Хеллмана"""
         try:
-            key_size = int(self.key_size.get())
+            key_size = int(self.key_size_combo.currentText())
             
             # Сначала генерируем параметры для Alice
             self.alice = DiffieHellman(key_size)
@@ -143,49 +336,50 @@ class DiffieHellmanApp:
                 info += f"Общий секретный ключ (первые 50 знаков): {str(self.shared_secret)[:50]}...\n\n"
                 info += "Ключи успешно сгенерированы!"
                 
-                self.key_info_text.config(state=tk.NORMAL)
-                self.key_info_text.delete('1.0', tk.END)
-                self.key_info_text.insert('1.0', info)
-                self.key_info_text.config(state=tk.DISABLED)
+                self.key_info_text.clear()
+                self.key_info_text.insertPlainText(info)
                 
-                messagebox.showinfo("Успех", "Ключи успешно сгенерированы!")
+                QMessageBox.information(self, "Успех", "Ключи успешно сгенерированы!")
             else:
-                messagebox.showerror("Ошибка", f"Ошибка генерации ключей: общие секреты не совпадают!\n"
-                                             f"Alice: {alice_shared_secret}\n"
-                                             f"Bob: {bob_shared_secret}")
+                QMessageBox.critical(self, "Ошибка", f"Ошибка генерации ключей: общие секреты не совпадают!\n"
+                                     f"Alice: {alice_shared_secret}\n"
+                                     f"Bob: {bob_shared_secret}")
                 
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка при генерации ключей: {str(e)}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка при генерации ключей: {str(e)}")
     
     def load_file(self, text_widget):
-        file_path = filedialog.askopenfilename(title="Выберите файл")
+        """Загрузка текста из файла"""
+        file_path, _ = QFileDialog.getOpenFileName(self, "Выберите файл")
         if file_path:
             try:
                 with open(file_path, 'r', encoding='utf-8') as file:
                     content = file.read()
-                    text_widget.delete('1.0', tk.END)
-                    text_widget.insert('1.0', content)
+                    text_widget.clear()
+                    text_widget.insertPlainText(content)
             except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось открыть файл: {str(e)}")
+                QMessageBox.critical(self, "Ошибка", f"Не удалось открыть файл: {str(e)}")
                 
     def save_file(self, content):
-        file_path = filedialog.asksaveasfilename(title="Сохранить как")
+        """Сохранение текста в файл"""
+        file_path, _ = QFileDialog.getSaveFileName(self, "Сохранить как")
         if file_path:
             try:
                 with open(file_path, 'w', encoding='utf-8') as file:
                     file.write(content)
-                messagebox.showinfo("Успех", "Файл успешно сохранен!")
+                QMessageBox.information(self, "Успех", "Файл успешно сохранен!")
             except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось сохранить файл: {str(e)}")
+                QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить файл: {str(e)}")
     
     def encrypt_data(self):
+        """Шифрование данных"""
         if not self.shared_secret:
-            messagebox.showerror("Ошибка", "Сначала сгенерируйте ключи!")
+            QMessageBox.critical(self, "Ошибка", "Сначала сгенерируйте ключи!")
             return
         
-        plaintext = self.encrypt_input.get('1.0', tk.END).strip()
+        plaintext = self.encrypt_input.toPlainText().strip()
         if not plaintext:
-            messagebox.showwarning("Предупреждение", "Введите текст для шифрования!")
+            QMessageBox.warning(self, "Предупреждение", "Введите текст для шифрования!")
             return
         
         try:
@@ -205,20 +399,21 @@ class DiffieHellmanApp:
             # Комбинируем IV и шифротекст и кодируем в base64 для удобства отображения
             result = base64.b64encode(iv + ciphertext).decode('utf-8')
             
-            self.encrypt_output.delete('1.0', tk.END)
-            self.encrypt_output.insert('1.0', result)
+            self.encrypt_output.clear()
+            self.encrypt_output.insertPlainText(result)
             
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка шифрования: {str(e)}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка шифрования: {str(e)}")
     
     def decrypt_data(self):
+        """Расшифрование данных"""
         if not self.shared_secret:
-            messagebox.showerror("Ошибка", "Сначала сгенерируйте ключи!")
+            QMessageBox.critical(self, "Ошибка", "Сначала сгенерируйте ключи!")
             return
         
-        ciphertext_b64 = self.decrypt_input.get('1.0', tk.END).strip()
+        ciphertext_b64 = self.decrypt_input.toPlainText().strip()
         if not ciphertext_b64:
-            messagebox.showwarning("Предупреждение", "Введите текст для расшифрования!")
+            QMessageBox.warning(self, "Предупреждение", "Введите текст для расшифрования!")
             return
         
         try:
@@ -241,16 +436,17 @@ class DiffieHellmanApp:
             unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
             plaintext = unpadder.update(padded_plaintext) + unpadder.finalize()
             
-            self.decrypt_output.delete('1.0', tk.END)
-            self.decrypt_output.insert('1.0', plaintext.decode('utf-8'))
+            self.decrypt_output.clear()
+            self.decrypt_output.insertPlainText(plaintext.decode('utf-8'))
             
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Ошибка расшифрования: {str(e)}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка расшифрования: {str(e)}")
 
 def main():
-    root = tk.Tk()
-    app = DiffieHellmanApp(root)
-    root.mainloop()
+    app = QApplication(sys.argv)
+    window = DiffieHellmanApp()
+    window.show()
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()
